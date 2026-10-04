@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="theme-color" content="#000000" />
+<title>My Stream</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0;
+    background: #000;
+    color: #fff;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    padding-bottom: 40px;
+  }
+  header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    padding: 14px 16px;
+    background: linear-gradient(to bottom, #000 60%, transparent);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  header h1 {
+    margin: 0;
+    font-size: 22px;
+    font-weight: 800;
+    color: #e50914;
+    letter-spacing: -0.5px;
+  }
+  header input {
+    flex: 1;
+    background: #222;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 12px;
+    color: #fff;
+    font-size: 15px;
+    outline: none;
+  }
+  .row { margin-bottom: 24px; }
+  .row h2 {
+    font-size: 17px;
+    margin: 0 0 10px 16px;
+    font-weight: 600;
+  }
+  .scroller {
+    display: flex;
+    gap: 10px;
+    overflow-x: auto;
+    padding: 0 16px 8px;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+  }
+  .scroller::-webkit-scrollbar { display: none; }
+  .card {
+    flex: 0 0 130px;
+    scroll-snap-align: start;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #181818;
+    position: relative;
+  }
+  .card img {
+    width: 100%;
+    height: 195px;
+    object-fit: cover;
+    display: block;
+  }
+  .card .title {
+    font-size: 12px;
+    padding: 8px;
+    line-height: 1.3;
+    color: #ddd;
+  }
+  .loading { padding: 40px 16px; color: #888; text-align: center; }
+  .modal {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.92);
+    display: none; align-items: center; justify-content: center;
+    z-index: 100; padding: 16px;
+  }
+  .modal.open { display: flex; }
+  .modal iframe {
+    width: 100%; aspect-ratio: 16/9; border: none; border-radius: 10px;
+  }
+  .close {
+    position: absolute; top: 20px; right: 20px;
+    background: #333; color: #fff; border: none;
+    border-radius: 50%; width: 36px; height: 36px; font-size: 18px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>MY STREAM</h1>
+  <input id="search" placeholder="Search movies..." />
+</header>
+
+<main id="app">
+  <div class="loading">Loading...</div>
+</main>
+
+<div class="modal" id="modal">
+  <button class="close" onclick="closeModal()">✕</button>
+  <iframe id="player" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+</div>
+
+<script>
+const API_KEY = "YOUR_TMDB_API_KEY";
+const BASE = "https://api.themoviedb.org/3";
+const IMG = "https://image.tmdb.org/t/p/w500";
+
+const rows = [
+  { title: "Trending Now", path: `/trending/movie/day?api_key=${API_KEY}` },
+  { title: "Popular", path: `/movie/popular?api_key=${API_KEY}` },
+  { title: "Top Rated", path: `/movie/top_rated?api_key=${API_KEY}` },
+  { title: "Upcoming", path: `/movie/upcoming?api_key=${API_KEY}` }
+];
+
+async function fetchJSON(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("Network error");
+  return res.json();
+}
+
+function card(movie) {
+  const div = document.createElement("div");
+  div.className = "card";
+  const poster = movie.poster_path
+    ? IMG + movie.poster_path
+    : "https://via.placeholder.com/300x450/222/666?text=No+Poster";
+  div.innerHTML = `
+    <img src="${poster}" alt="${movie.title}" loading="lazy" />
+    <div class="title">${movie.title || movie.name || "Untitled"}</div>
+  `;
+  div.onclick = () => openTrailer(movie.id);
+  return div;
+}
+
+function renderRow(title, items) {
+  const section = document.createElement("section");
+  section.className = "row";
+  section.innerHTML = `<h2>${title}</h2>`;
+  const scroller = document.createElement("div");
+  scroller.className = "scroller";
+  items.forEach(m => scroller.appendChild(card(m)));
+  section.appendChild(scroller);
+  return section;
+}
+
+async function load() {
+  const app = document.getElementById("app");
+  app.innerHTML = "";
+  try {
+    for (const row of rows) {
+      const data = await fetchJSON(BASE + row.path);
+      app.appendChild(renderRow(row.title, data.results || []));
+    }
+  } catch (e) {
+    app.innerHTML = `<div class="loading">Error loading. Check your TMDb API key.</div>`;
+  }
+}
+
+async function openTrailer(movieId) {
+  const modal = document.getElementById("modal");
+  const player = document.getElementById("player");
+  player.src = "";
+  modal.classList.add("open");
+
+  try {
+    const data = await fetchJSON(`${BASE}/movie/${movieId}/videos?api_key=${API_KEY}`);
+    const trailer = (data.results || []).find(v => v.site === "YouTube" && v.type === "Trailer")
+      || (data.results || []).find(v => v.site === "YouTube");
+    if (trailer) {
+      player.src = `https://www.youtube.com/embed/${trailer.key}?autoplay=1`;
+    } else {
+      player.src = "";
+      alert("No trailer available.");
+      closeModal();
+    }
+  } catch {
+    alert("Could not load trailer.");
+    closeModal();
+  }
+}
+
+function closeModal() {
+  document.getElementById("modal").classList.remove("open");
+  document.getElementById("player").src = "";
+}
+
+// Simple search
+document.getElementById("search").addEventListener("keydown", async (e) => {
+  if (e.key !== "Enter") return;
+  const q = e.target.value.trim();
+  if (!q) return load();
+  const app = document.getElementById("app");
+  app.innerHTML = `<div class="loading">Searching...</div>`;
+  try {
+    const data = await fetchJSON(`${BASE}/search/movie?api_key=${API_KEY}&query=${encodeURIComponent(q)}`);
+    app.innerHTML = "";
+    app.appendChild(renderRow(`Results for "${q}"`, data.results || []));
+  } catch {
+    app.innerHTML = `<div class="loading">Search failed.</div>`;
+  }
+});
+
+load();
+</script>
+</body>
+</html>
